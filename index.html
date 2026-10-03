@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Number to Words Converter</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen p-4">
+<div class="max-w-3xl mx-auto">
+  <h1 class="text-3xl font-bold text-center mb-2 text-white">Number to Words Converter</h1>
+  <p class="text-center text-gray-400 mb-6 text-sm">Convert any number up to 999 trillion into English words</p>
+
+  <!-- Controls row -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+    <!-- Mode -->
+    <div class="bg-gray-800 rounded-2xl p-4">
+      <label class="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide" for="mode-select">Mode</label>
+      <select id="mode-select" oninput="convert()"
+        class="w-full bg-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" aria-label="Conversion mode selector">
+        <option value="cardinal">Cardinal (one thousand)</option>
+        <option value="ordinal">Ordinal (one thousandth)</option>
+        <option value="currency">Currency (dollars and cents)</option>
+      </select>
+    </div>
+
+    <!-- English variant -->
+    <div class="bg-gray-800 rounded-2xl p-4">
+      <label class="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">English Variant</label>
+      <div class="flex gap-2" role="group" aria-label="English variant selector">
+        <button id="btn-us" onclick="setVariant('us')"
+          class="flex-1 py-2 rounded-lg font-semibold text-sm transition-all bg-blue-600 text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+          aria-pressed="true">American</button>
+        <button id="btn-uk" onclick="setVariant('uk')"
+          class="flex-1 py-2 rounded-lg font-semibold text-sm transition-all bg-gray-700 text-gray-300 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          aria-pressed="false">British</button>
+      </div>
+    </div>
+
+    <!-- Currency symbol (for currency mode) -->
+    <div class="bg-gray-800 rounded-2xl p-4">
+      <label class="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide" for="currency-select">Currency</label>
+      <select id="currency-select" oninput="convert()"
+        class="w-full bg-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" aria-label="Currency selector">
+        <option value="dollar,dollars,cent,cents">US Dollar ($)</option>
+        <option value="pound,pounds,penny,pence">British Pound (£)</option>
+        <option value="euro,euros,cent,cents">Euro (€)</option>
+        <option value="yen,yen,sen,sen">Japanese Yen (¥)</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="bg-gray-800 rounded-2xl p-5 mb-4">
+    <label class="block text-sm font-semibold text-gray-300 mb-2" for="number-input">Number</label>
+    <input type="text" id="number-input" placeholder="Enter a number (e.g. -42, 3.14, 1000000)" oninput="convert()"
+      class="w-full bg-gray-700 text-white rounded-xl px-4 py-3 text-xl font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400"
+      aria-label="Number input field" autocomplete="off" spellcheck="false">
+    <div id="input-error" class="text-red-400 text-xs mt-1 hidden"></div>
+  </div>
+
+  <!-- Result -->
+  <div class="bg-gray-800 rounded-2xl p-5 mb-4">
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex-1">
+        <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Result</div>
+        <div id="result-text" class="text-white text-lg leading-relaxed min-h-[3rem] font-medium">Enter a number above</div>
+      </div>
+      <button onclick="copyResult()" id="copy-btn"
+        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium transition-colors flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-400" aria-label="Copy result to clipboard">Copy</button>
+    </div>
+  </div>
+
+  <!-- Number facts -->
+  <div id="facts-panel" class="bg-gray-800 rounded-2xl p-5 mb-4 hidden">
+    <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Number Facts</div>
+    <div id="facts-list" class="space-y-1"></div>
+  </div>
+
+  <!-- History -->
+  <div class="bg-gray-800 rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-bold text-gray-200">History (last 10)</h2>
+      <button onclick="clearHistory()" class="text-xs text-red-400 hover:text-red-300 focus:outline-none focus:ring-1 focus:ring-red-400 rounded px-2 py-1" aria-label="Clear conversion history">Clear</button>
+    </div>
+    <div id="history-list" class="space-y-2 text-sm text-gray-400"></div>
+  </div>
+</div>
+
+<script>
+let currentVariant = 'us';
+let lastResult = null;
+
+// --- Core conversion engine ---
+
+const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+  'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+// American: billion = 10^9, trillion = 10^12
+// British: billion = 10^9 (modern), same as American for modern usage
+// Key difference: "a hundred" vs "one hundred" in British English
+const groups = [
+  [1_000_000_000_000, 'trillion'],
+  [1_000_000_000, 'billion'],
+  [1_000_000, 'million'],
+  [1_000, 'thousand'],
+  [100, 'hundred'],
+];
+
+function threeDigits(n, variant) {
+  if(n===0) return '';
+  if(n<20) return ones[n];
+  if(n<100) {
+    const t = tens[Math.floor(n/10)];
+    const o = ones[n%10];
+    return o ? t+'-'+o : t;
+  }
+  const h = Math.floor(n/100);
+  const rem = n%100;
+  // British English: "a hundred" if the whole number is just hundreds
+  const hundredWord = (variant==='uk' && h===1) ? 'one' : ones[h];
+  let result = hundredWord+' hundred';
+  if(rem) {
+    result += (variant==='uk' ? ' and ' : ' ') + threeDigits(rem, variant);
+  }
+  return result;
+}
+
+function intToWords(n, variant) {
+  if(n===0) return 'zero';
+  if(n<0) return 'negative ' + intToWords(-n, variant);
+  n = Math.floor(n);
+
+  let result = '';
+  let remaining = n;
+
+  for(const [val, name] of groups) {
+    if(remaining >= val) {
+      const count = Math.floor(remaining/val);
+      remaining %= val;
+      result += (result?' ':'') + threeDigits(count, variant) + ' ' + name;
+    }
+  }
+  if(remaining>0) {
+    const needsAnd = (variant==='uk' && n>=100);
+    result += (result ? (needsAnd?' and ':' ') : '') + threeDigits(remaining, variant);
+  }
+  return result.trim();
+}
+
+// Ordinal conversion
+const ordinalSpecial = {
+  'one':'first','two':'second','three':'third','four':'fourth','five':'fifth',
+  'six':'sixth','seven':'seventh','eight':'eighth','nine':'ninth','ten':'tenth',
+  'eleven':'eleventh','twelve':'twelfth','thirteen':'thirteenth','fourteen':'fourteenth',
+  'fifteen':'fifteenth','sixteen':'sixteenth','seventeen':'seventeenth','eighteen':'eighteenth',
+  'nineteen':'nineteenth','twenty':'twentieth','thirty':'thirtieth','forty':'fortieth',
+  'fifty':'fiftieth','sixty':'sixtieth','seventy':'seventieth','eighty':'eightieth','ninety':'ninetieth',
+  'hundred':'hundredth','thousand':'thousandth','million':'millionth','billion':'billionth','trillion':'trillionth',
+};
+
+function toOrdinal(words) {
+  if(!words || words==='zero') return 'zeroth';
+  // Split on last word and replace
+  const parts = words.split(' ');
+  const last = parts[parts.length-1];
+  // Handle hyphenated (twenty-one -> twenty-first)
+  if(last.includes('-')) {
+    const sub = last.split('-');
+    const subLast = sub[sub.length-1];
+    if(ordinalSpecial[subLast]) {
+      sub[sub.length-1] = ordinalSpecial[subLast];
+      parts[parts.length-1] = sub.join('-');
+    } else {
+      parts[parts.length-1] = last+'th';
+    }
+  } else {
+    parts[parts.length-1] = ordinalSpecial[last] || last+'th';
+  }
+  return parts.join(' ');
+}
+
+function toWords(input, mode, variant) {
+  // Parse input
+  const str = input.replace(/,/g,'').trim();
+  if(str==='' || str==='-') return null;
+
+  // Validate
+  if(!/^-?\d+(\.\d+)?$/.test(str)) return null;
+
+  const isNeg = str.startsWith('-');
+  const abs = isNeg ? str.slice(1) : str;
+  const [intPart, fracPart] = abs.split('.');
+  const intVal = parseInt(intPart, 10);
+
+  // Limit
+  if(intVal > 999_999_999_999_999) return null;
+
+  if(mode === 'currency') {
+    const currencyStr = document.getElementById('currency-select').value;
+    const [unitSing, unitPlur, centSing, centPlur] = currencyStr.split(',');
+    const dollars = intVal;
+    let cents = 0;
+    if(fracPart) {
+      const cf = fracPart.slice(0,2).padEnd(2,'0');
+      cents = parseInt(cf, 10);
+    }
+    let result = '';
+    if(isNeg) result += 'negative ';
+    result += intToWords(dollars, variant) + ' ' + (dollars===1?unitSing:unitPlur);
+    result += ' and ';
+    result += intToWords(cents, variant) + ' ' + (cents===1?centSing:centPlur);
+    return result;
+  }
+
+  const intWords = intToWords(intVal, variant);
+  let prefix = isNeg ? 'negative ' : '';
+
+  if(mode === 'ordinal') {
+    if(fracPart) return null; // ordinal doesn't apply to decimals
+    return prefix + toOrdinal(intWords);
+  }
+
+  // Cardinal
+  if(fracPart !== undefined) {
+    const fracWords = fracPart.split('').map(d=>ones[parseInt(d,10)]||'zero').join(' ');
+    return prefix + intWords + ' point ' + fracWords;
+  }
+  return prefix + intWords;
+}
+
+// --- Number facts ---
+function isPrime(n) {
+  if(n<2) return false;
+  if(n===2) return true;
+  if(n%2===0) return false;
+  for(let i=3;i<=Math.sqrt(n);i+=2) if(n%i===0) return false;
+  return true;
+}
+function isPerfectSquare(n) {
+  if(n<0) return false;
+  const s = Math.round(Math.sqrt(n));
+  return s*s===n;
+}
+function isPerfectCube(n) {
+  if(n<0) { const s=Math.round(Math.cbrt(-n)); return s*s*s===-n; }
+  const s=Math.round(Math.cbrt(n));
+  return s*s*s===n;
+}
+function getFibonacciCheck(n) {
+  if(n<0) return false;
+  function isPerfSq(x){ const s=Math.round(Math.sqrt(x)); return s*s===x; }
+  return isPerfSq(5*n*n+4)||isPerfSq(5*n*n-4);
+}
+function getNumberFacts(n) {
+  const facts = [];
+  if(Number.isInteger(n) && n>=0 && n<1e15) {
+    if(isPrime(n)) facts.push({ icon:'🔵', text:`${n} is a prime number` });
+    else if(n>1) facts.push({ icon:'⚫', text:`${n} is a composite number` });
+    if(isPerfectSquare(n)) facts.push({ icon:'⬛', text:`${n} is a perfect square (√${n} = ${Math.round(Math.sqrt(n))})` });
+    if(isPerfectCube(n) && n>1) facts.push({ icon:'🟫', text:`${n} is a perfect cube (∛${n} = ${Math.round(Math.cbrt(n))})` });
+    if(n>1 && getFibonacciCheck(n)) facts.push({ icon:'🌀', text:`${n} is a Fibonacci number` });
+    if(n>0 && n%2===0) facts.push({ icon:'🔶', text:`${n} is an even number` });
+    else if(n>0) facts.push({ icon:'🔷', text:`${n} is an odd number` });
+    if(n>0 && n%10===0) facts.push({ icon:'🔟', text:`${n} is divisible by 10` });
+    if(n>0 && n%100===0) facts.push({ icon:'💯', text:`${n} is divisible by 100` });
+    if(n===0) facts.push({ icon:'🟡', text:`Zero is neither positive nor negative` });
+    if(n===1) facts.push({ icon:'1️⃣', text:`1 is neither prime nor composite` });
+  } else if(!Number.isInteger(n)) {
+    facts.push({ icon:'📐', text:`This is a decimal (non-integer) number` });
+  }
+  if(n<0) facts.push({ icon:'➖', text:`This is a negative number` });
+  return facts;
+}
+
+// --- Main convert function ---
+function convert() {
+  const input = document.getElementById('number-input').value;
+  const mode = document.getElementById('mode-select').value;
+  const errorEl = document.getElementById('input-error');
+
+  if(!input.trim()) {
+    document.getElementById('result-text').textContent = 'Enter a number above';
+    document.getElementById('facts-panel').classList.add('hidden');
+    errorEl.classList.add('hidden');
+    return;
+  }
+
+  const cleaned = input.replace(/,/g,'').trim();
+  if(!/^-?\d+(\.\d+)?$/.test(cleaned)) {
+    errorEl.textContent = 'Please enter a valid number (digits only, optional leading minus and decimal point)';
+    errorEl.classList.remove('hidden');
+    document.getElementById('result-text').textContent = '—';
+    return;
+  }
+  errorEl.classList.add('hidden');
+
+  const numVal = parseFloat(cleaned);
+  if(Math.abs(numVal) > 999_999_999_999_999) {
+    errorEl.textContent = 'Number too large. Maximum is 999 trillion.';
+    errorEl.classList.remove('hidden');
+    document.getElementById('result-text').textContent = '—';
+    return;
+  }
+
+  const words = toWords(cleaned, mode, currentVariant);
+  if(!words) {
+    errorEl.textContent = mode==='ordinal' ? 'Ordinal mode requires an integer.' : 'Could not convert this number.';
+    errorEl.classList.remove('hidden');
+    document.getElementById('result-text').textContent = '—';
+    return;
+  }
+
+  // Capitalize first letter
+  const display = words.charAt(0).toUpperCase() + words.slice(1);
+  document.getElementById('result-text').textContent = display;
+  lastResult = { input:cleaned, words:display, mode, variant:currentVariant };
+
+  // Facts
+  const intVal = parseInt(cleaned.replace('-','').split('.')[0], 10);
+  const facts = getNumberFacts(Number.isInteger(numVal) ? numVal : numVal);
+  const factsPanel = document.getElementById('facts-panel');
+  const factsList = document.getElementById('facts-list');
+  factsList.innerHTML = '';
+  if(facts.length) {
+    facts.forEach(f => {
+      const d = document.createElement('div');
+      d.className = 'flex items-center gap-2 text-sm text-gray-300';
+      const icon = document.createElement('span');
+      icon.textContent = f.icon;
+      const text = document.createElement('span');
+      text.textContent = f.text;
+      d.appendChild(icon);
+      d.appendChild(text);
+      factsList.appendChild(d);
+    });
+    factsPanel.classList.remove('hidden');
+  } else {
+    factsPanel.classList.add('hidden');
+  }
+
+  // Add to history (debounce: only save if user paused typing)
+  clearTimeout(window._histTimer);
+  window._histTimer = setTimeout(() => addToHistory(cleaned, display, mode), 800);
+}
+
+function setVariant(v) {
+  currentVariant = v;
+  document.getElementById('btn-us').className = v==='us'
+    ? 'flex-1 py-2 rounded-lg font-semibold text-sm transition-all bg-blue-600 text-white focus:outline-none focus:ring-2 focus:ring-blue-400'
+    : 'flex-1 py-2 rounded-lg font-semibold text-sm transition-all bg-gray-700 text-gray-300 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-400';
+  document.getElementById('btn-uk').className = v==='uk'
+    ? 'flex-1 py-2 rounded-lg font-semibold text-sm transition-all bg-blue-600 text-white focus:outline-none focus:ring-2 focus:ring-blue-400'
+    : 'flex-1 py-2 rounded-lg font-semibold text-sm transition-all bg-gray-700 text-gray-300 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-400';
+  document.getElementById('btn-us').setAttribute('aria-pressed', v==='us');
+  document.getElementById('btn-uk').setAttribute('aria-pressed', v==='uk');
+  convert();
+}
+
+function copyResult() {
+  const text = document.getElementById('result-text').textContent;
+  if(text && text!=='Enter a number above' && text!=='—') {
+    if(navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(()=>{
+        const btn = document.getElementById('copy-btn');
+        btn.textContent='Copied!';
+        setTimeout(()=>{ btn.textContent='Copy'; }, 1500);
+      });
+    }
+  }
+}
+
+function addToHistory(input, words, mode) {
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem('n2w-history') || '[]'); } catch(e){}
+  // Avoid duplicate consecutive entries
+  if(history.length && history[0].input===input && history[0].mode===mode) return;
+  history.unshift({ input, words, mode, variant:currentVariant, date:new Date().toLocaleTimeString() });
+  if(history.length>10) history=history.slice(0,10);
+  try { localStorage.setItem('n2w-history', JSON.stringify(history)); } catch(e){}
+  renderHistory();
+}
+
+function renderHistory() {
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem('n2w-history') || '[]'); } catch(e){}
+  const el = document.getElementById('history-list');
+  el.innerHTML = '';
+  if(!history.length) {
+    const d = document.createElement('div');
+    d.className = 'text-gray-500 text-xs';
+    d.textContent = 'No history yet.';
+    el.appendChild(d);
+    return;
+  }
+  for(const h of history) {
+    const row = document.createElement('div');
+    row.className = 'bg-gray-700/50 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-700 transition-colors';
+    row.setAttribute('tabindex','0');
+    row.setAttribute('role','button');
+    row.setAttribute('aria-label', `Load ${h.input}`);
+    row.onclick = () => { document.getElementById('number-input').value=h.input; convert(); };
+    row.onkeydown = (e) => { if(e.key==='Enter'||e.key===' '){ row.onclick(); } };
+
+    const num = document.createElement('div');
+    num.className = 'font-mono text-indigo-300 font-bold text-sm';
+    num.textContent = h.input;
+
+    const words = document.createElement('div');
+    words.className = 'text-gray-300 text-xs leading-relaxed';
+    words.textContent = h.words;
+
+    const meta = document.createElement('div');
+    meta.className = 'text-gray-500 text-xs mt-0.5';
+    meta.textContent = h.mode + ' · ' + (h.variant==='uk'?'British':'American') + ' · ' + h.date;
+
+    row.appendChild(num);
+    row.appendChild(words);
+    row.appendChild(meta);
+    el.appendChild(row);
+  }
+}
+
+function clearHistory() {
+  if(confirm('Clear history?')) {
+    try { localStorage.removeItem('n2w-history'); } catch(e){}
+    renderHistory();
+  }
+}
+
+renderHistory();
+</script>
+</body>
+</html>
